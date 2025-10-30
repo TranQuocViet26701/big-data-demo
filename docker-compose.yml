@@ -1,0 +1,149 @@
+services:
+  # ============================================
+  # Hadoop HDFS - NameNode
+  # ============================================
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    ports:
+      - "9870:9870"  # Web UI
+      - "9000:9000"  # HDFS port
+    environment:
+      - CLUSTER_NAME=bigdata-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - CORE_CONF_hadoop_http_staticuser_user=root
+      - HDFS_CONF_dfs_namenode_datanode_registration_ip___hostname___check=false
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+      - ./data:/data
+      - ./spark:/spark
+    networks:
+      - bigdata-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9870"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # Hadoop HDFS - DataNode
+  # ============================================
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    ports:
+      - "9864:9864"  # Web UI
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - CORE_CONF_hadoop_http_staticuser_user=root
+      - HDFS_CONF_dfs_namenode_datanode_registration_ip___hostname___check=false
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    networks:
+      - bigdata-network
+    depends_on:
+      - namenode
+
+  # ============================================
+  # Apache Spark - Master
+  # ============================================
+  spark-master:
+    image: bde2020/spark-master:3.3.0-hadoop3.3
+    container_name: spark-master
+    ports:
+      - "8080:8080"  # Web UI
+      - "7077:7077"  # Spark master port
+    environment:
+      - INIT_DAEMON_STEP=setup_spark
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    volumes:
+      - ./spark:/opt/spark-apps
+      - ./data:/data
+    networks:
+      - bigdata-network
+    depends_on:
+      - namenode
+
+  # ============================================
+  # Apache Spark - Worker
+  # ============================================
+  spark-worker:
+    image: bde2020/spark-worker:3.3.0-hadoop3.3
+    container_name: spark-worker
+    ports:
+      - "8081:8081"  # Web UI
+    environment:
+      - SPARK_MASTER=spark://spark-master:7077
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=1g
+    volumes:
+      - ./spark:/opt/spark-apps
+      - ./data:/data
+    networks:
+      - bigdata-network
+    depends_on:
+      - spark-master
+      - namenode
+
+  # ============================================
+  # HBase - Standalone (Compatible with Hadoop 3.x)
+  # ============================================
+  hbase:
+    image: harisekhon/hbase:2.1
+    container_name: hbase
+    hostname: hbase
+    ports:
+      - "16010:16010"  # HBase Master Web UI
+      - "16000:16000"  # HBase Master port
+      - "16020:16020"  # HBase RegionServer port
+      - "16030:16030"  # HBase RegionServer Web UI
+      - "9090:9090"    # Thrift Server
+      - "2181:2181"    # ZooKeeper (built-in)
+    environment:
+      - HBASE_CONF_hbase_rootdir=hdfs://namenode:9000/hbase
+      - HBASE_CONF_hbase_cluster_distributed=false
+      - HBASE_CONF_hbase_zookeeper_quorum=localhost
+      - HBASE_CONF_hbase_zookeeper_property_dataDir=/data/zookeeper
+      - HBASE_CONF_hbase_zookeeper_property_clientPort=2181
+    volumes:
+      - hbase_data:/data
+      - ./config:/hbase-config
+    networks:
+      - bigdata-network
+    depends_on:
+      - namenode
+
+  # ============================================
+  # Streamlit Dashboard
+  # ============================================
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: dashboard
+    ports:
+      - "8501:8501"  # Streamlit Web UI
+    environment:
+      - HDFS_NAMENODE=http://namenode:9870
+      - SPARK_MASTER=http://spark-master:8080
+      - HBASE_THRIFT=hbase:9090
+      - HBASE_REST=http://hbase:16010
+    volumes:
+      - ./dashboard:/app
+    networks:
+      - bigdata-network
+    depends_on:
+      - namenode
+      - spark-master
+      - hbase
+    command: streamlit run streamlit_app.py --server.address=0.0.0.0
+
+networks:
+  bigdata-network:
+    driver: bridge
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
+  hbase_data:
