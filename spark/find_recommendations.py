@@ -222,7 +222,7 @@ def main():
     start_time = time.time()
 
     # Get HDFS path from argument or use default
-    hdfs_path = sys.argv[1] if len(sys.argv) > 1 else "hdfs://namenode:9000/data/clickstream_large.txt"
+    hdfs_path = sys.argv[1] if len(sys.argv) > 1 else "hdfs://localhost:9000/big-data-demo/clickstream_large.txt"
 
     # Step 1: Create Spark Session
     spark = create_spark_session()
@@ -241,7 +241,7 @@ def main():
         user_stats, action_dist = analyze_user_behavior(df)
 
         # Step 6: Save results to HBase
-        save_to_hbase(top_products, hbase_host='hbase', hbase_port=9090)
+        save_to_hbase(top_products, hbase_host='localhost', hbase_port=9090)
 
         # Summary
         total_time = time.time() - start_time
